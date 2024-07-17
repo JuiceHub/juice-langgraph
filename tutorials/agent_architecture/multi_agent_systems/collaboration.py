@@ -6,7 +6,6 @@ from langgraph.graph import StateGraph
 
 from model.language_models import GLM4
 
-os.environ["TAVILY_API_KEY"] = "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"
 
 
 def create_agent(llm, tools, system_message: str):
