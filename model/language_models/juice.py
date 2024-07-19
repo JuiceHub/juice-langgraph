@@ -23,11 +23,11 @@ from transformers import AutoTokenizer, AutoModelForCausalLM
 
 
 class JuiceChatModel(BaseChatModel):
-    model_name: str = "GLM4"
+    model_name: str = None
     tokenizer: Any
     model: Any
     device: str = "cuda:0"
-    model_id: str = "/home/user/ygz/base_model/ZhipuAI/glm-4-9b-chat"
+    model_id: str = None
     gen_kwargs: dict = None
 
     def __init__(self, **kwargs: Any):
@@ -50,7 +50,8 @@ class JuiceChatModel(BaseChatModel):
                 trust_remote_code=True
             ).eval()
 
-        self.gen_kwargs = kwargs.get("gen_kwargs", {"max_new_tokens": 1024, "do_sample": True, "top_k": 1})
+        self.gen_kwargs = kwargs.get("gen_kwargs",
+                                     {"max_new_tokens": 1024, "do_sample": True, "top_p": 0.1, "temperature": 0.2})
         lora = kwargs.get("lora")
         if lora:
             print(f"Load Lora")
@@ -65,43 +66,7 @@ class JuiceChatModel(BaseChatModel):
             run_manager: Optional[CallbackManagerForLLMRun] = None,
             **kwargs: Any,
     ) -> ChatResult:
-        message_dicts = self._create_message_dicts(messages)
-        tools = kwargs.get("tools", [])
-        chat_history = process_input(message_dicts, tools)
-        template = self.tokenizer.apply_chat_template(chat_history,
-                                                      add_generation_prompt=True,
-                                                      tokenize=False
-                                                      )
-
-        inputs = self.tokenizer(
-            template,
-            return_tensors="pt",
-        ).to(self.device)
-
-        gen_kwargs = self.gen_kwargs
-        with torch.no_grad():
-            outputs = self.model.generate(**inputs, **gen_kwargs)
-            outputs = outputs[:, inputs['input_ids'].shape[1]:]
-            response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        function_call = process_response(response)
-        tool_calls = None
-        if isinstance(function_call, dict):
-            finish_reason = "tool_calls"
-            tool_calls = [
-                {
-                    "id": 1,
-                    "function": function_call,
-                    "type": "tool_use"
-                }
-            ]
-        message = {
-            "role": "assistant",
-            "content": None if tool_calls else response,
-            "function_call": None,
-            "tool_calls": tool_calls
-        }
-
-        return self._create_chat_result(message)
+        ...
 
     @property
     def _llm_type(self) -> str:
@@ -128,6 +93,8 @@ class JuiceChatModel(BaseChatModel):
             self, response: dict
     ) -> ChatResult:
         generations = []
+        if not isinstance(response, dict):
+            response = response.dict()
         message = _convert_dict_to_message(response)
         gen = ChatGeneration(message=message)
         generations.append(gen)
@@ -395,46 +362,3 @@ def _lc_invalid_tool_call_to_glm_tool_call(
 
 def _is_pydantic_class(obj: Any) -> bool:
     return isinstance(obj, type) and issubclass(obj, BaseModel)
-
-
-def process_input(messages: List[Dict], tools: List[Dict]):
-    if len(tools) == 0:
-        return messages
-
-    if messages[0]["role"] == "system":
-        system_prompt = [{
-            "role": "system",
-            "content": messages[0]["content"],
-            "tools": tools
-        }]
-        chat_history = system_prompt + messages[1:]
-    else:
-        system_prompt = [{
-            "role": "system",
-            "content": "",
-            "tools": tools
-        }]
-        chat_history = system_prompt + messages
-
-    return chat_history
-
-
-def process_response(response: str):
-    lines = response.strip().split("\n")
-    if len(lines) >= 2 and lines[1].startswith("{"):
-        function_name = lines[0].strip()
-        arguments = "\n".join(lines[1:]).strip()
-
-        try:
-            arguments_json = json.loads(arguments)
-            is_tool_call = True
-        except json.JSONDecodeError:
-            is_tool_call = False
-        if is_tool_call:
-            content = {
-                "name": function_name,
-                "arguments": json.dumps(arguments_json if isinstance(arguments_json, dict) else arguments,
-                                        ensure_ascii=False)
-            }
-            return content
-    return response.strip()

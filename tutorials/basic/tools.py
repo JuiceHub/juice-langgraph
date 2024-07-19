@@ -9,7 +9,7 @@ from langgraph.graph import StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.prebuilt import ToolNode, tools_condition
 
-from model.language_models.glm.glm4 import GLM4
+from model.language_models import GLM4
 
 
 class State(TypedDict):
@@ -18,7 +18,6 @@ class State(TypedDict):
 
 graph_builder = StateGraph(State)
 
-os.environ["TAVILY_API_KEY"] = "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"
 tool = TavilySearchResults(max_results=2)
 tools = [tool]
 llm = GLM4()
@@ -46,7 +45,7 @@ graph = graph_builder.compile()
 from langchain_core.messages import BaseMessage
 
 while True:
-    user_input = input("User: ")
+    user_input = "what's langgraph all about?"
     if user_input.lower() in ["quit", "exit", "q"]:
         print("Goodbye!")
         break
